@@ -1,6 +1,7 @@
 services:
   web:
     image: php:8.4-apache
+    restart: always
     build: .
     container_name: ${APP_NAME}-apache
     volumes:
@@ -21,6 +22,7 @@ services:
 
   db:
     image: mariadb:${MARIADB_VERSION}
+    restart: always
     container_name: ${APP_NAME}-mariadb
     environment:
           MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -38,6 +40,7 @@ services:
 
   redis:
     image: redis:7
+    restart: always
     container_name: ${APP_NAME}-redis
     ports:
       - ${REDIS_PORT}:6379
