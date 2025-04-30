@@ -34,4 +34,10 @@ RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli
 RUN ln -sf /usr/bin/msmtp /usr/sbin/sendmail
 
 COPY msmtprc /etc/msmtprc
-RUN chmod 600 /etc/msmtprc
+RUN chmod 644 /etc/msmtprc
+RUN echo 'sendmail_path = "/usr/bin/msmtp -t --read-envelope-from"' > /usr/local/etc/php/conf.d/mail.ini
+
+RUN touch /var/log/msmtp.log && \
+    chown www-data:www-data /var/log/msmtp.log && \
+    chmod 644 /var/log/msmtp.log
+
