@@ -6,7 +6,7 @@ services:
     container_name: ${APP_NAME}-apache
     volumes:
       - ./${APACHE_HTDOCS}:/var/www/html
-      - ./config/php.ini:/usr/local/etc/php/php.ini
+      - ./config/php/php.ini:/usr/local/etc/php/php.ini
       - ./config/apache/symfony.conf:/etc/apache2/sites-available/000-default.conf
     ports:
       - "${APACHE_PORT}:80"

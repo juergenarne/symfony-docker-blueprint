@@ -1,43 +1,53 @@
 FROM php:8.4-apache
 
-# Install msmtp as lightweight sendmail replacement
-RUN apt-get update && \
-    apt-get install -y msmtp msmtp-mta \
+# Systemabhängige Tools & Bibliotheken installieren
+RUN apt-get update && apt-get install -y \
+    unzip \
+    git \
+    curl \
+    libicu-dev \
+    libzip-dev \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
-    libzip-dev \
-    libicu-dev \
+    libxml2-dev \
     libmagickwand-dev \
     imagemagick \
-    unzip \
-    git \
     mariadb-client \
-    --no-install-recommends \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-configure intl \
-    && docker-php-ext-install gd mysqli zip intl exif \
-    && if ! pecl list | grep imagick; then pecl install imagick; fi \
-    && docker-php-ext-enable imagick \
-    && if ! php -m | grep -i redis; then pecl install redis && docker-php-ext-enable redis; fi \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 
-# Enable Apache mod_rewrite for WordPress permalinks
+# PHP-Erweiterungen installieren
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
+    docker-php-ext-install \
+        pdo \
+        pdo_mysql \
+        intl \
+        zip \
+        gd \
+        exif \
+        opcache \
+        xml
+
+# Redis & Imagick via PECL
+RUN pecl install redis imagick && \
+    docker-php-ext-enable redis imagick
+
+# mod_rewrite aktivieren (für Symfony Routing)
 RUN a2enmod rewrite
 
-# Install WP-CLI
-RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
-    && chmod +x wp-cli.phar \
-    && mv wp-cli.phar /usr/local/bin/wp
+# Composer installieren
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Link msmtp to sendmail path
-RUN ln -sf /usr/bin/msmtp /usr/sbin/sendmail
+# Arbeitsverzeichnis setzen
+WORKDIR /var/www/html
 
-COPY msmtprc /etc/msmtprc
-RUN chmod 644 /etc/msmtprc
-RUN echo 'sendmail_path = "/usr/bin/msmtp -t --read-envelope-from"' > /usr/local/etc/php/conf.d/mail.ini
+# Apache DocumentRoot auf /public setzen
+ENV APACHE_DOCUMENT_ROOT /var/www/html/public
 
-RUN touch /var/log/msmtp.log && \
-    chown www-data:www-data /var/log/msmtp.log && \
-    chmod 644 /var/log/msmtp.log
+# VirtualHost entsprechend anpassen
+RUN sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/*.conf && \
+    sed -ri -e 's!/var/www/!/var/www/html/public!g' /etc/apache2/apache2.conf /etc/apache2/sites-available/*.conf
 
+# Berechtigungen (wenn gewünscht)
+RUN chown -R www-data:www-data /var/www/html
