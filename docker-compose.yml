@@ -7,36 +7,29 @@ services:
     volumes:
       - ./${APACHE_HTDOCS}:/var/www/html
       - ./config/php.ini:/usr/local/etc/php/php.ini
+      - ./config/apache/symfony.conf:/etc/apache2/sites-available/000-default.conf
     ports:
       - "${APACHE_PORT}:80"
-    networks:
-      - develop-network
     depends_on:
       - db
       - redis
     environment:
-      WORDPRESS_DB_HOST: db:${MYSQL_PORT}
-      WORDPRESS_DB_USER: ${MYSQL_USER}
-      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
-      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:${MYSQL_PORT}/${MYSQL_DATABASE}"
+    networks:
+      - symfony-network
 
   db:
     image: mariadb:${MARIADB_VERSION}
     restart: always
     container_name: ${APP_NAME}-mariadb
-    environment:
-          MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-          MYSQL_DATABASE: ${MYSQL_DATABASE}
-          MYSQL_USER: ${MYSQL_USER}
-          MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - ${MARIADB_LOCAL_DIR}${MARIADB_DATA_DIR}:/var/lib/mysql
       - ${MARIADB_LOCAL_DIR}${MARIADB_CONF_DIR}:/etc/mysql/conf.d
       - ${MARIADB_LOCAL_DIR}${MARIADB_ETC_DIR}:/etc/mysql
     ports:
-      - ${MYSQL_PORT}:3306
+      - ${MYSQL_PORT:-3306}:3306
     networks:
-      - develop-network
+      - symfony-network
 
   redis:
     image: redis:7
@@ -45,10 +38,10 @@ services:
     ports:
       - ${REDIS_PORT}:6379
     networks:
-      - develop-network
+      - symfony-network
 
 networks:
-  develop-network:
+  symfony-network:
     driver: bridge
 
 volumes:
