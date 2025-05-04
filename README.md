@@ -1,4 +1,4 @@
-# WordPress blueprint
+# Docker image blueprint for Symfony development
 
 **Download:**
 
