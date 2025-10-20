@@ -8,7 +8,7 @@ git clone https://juergenarne@github.com/juergenarne/symfony-docker-blueprint.gi
 
 Tweak:
 
-Modify stuff from the .env file and from the msmtprc file to meet your needs.
+Modify stuff from the .env file to meet your needs.
 
 Run:
 
