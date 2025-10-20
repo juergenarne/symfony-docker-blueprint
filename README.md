@@ -3,7 +3,7 @@
 Download:
 
 ```bash
-git clone https://juergenarne@github.com/juergenarne/symfony-docker-blueprint.git
+git clone https://juergenarne@github.com/juergenarne/symfony-docker-blueprint.git .
 ```
 
 Tweak:
@@ -37,6 +37,11 @@ To clone your repo into the  `symfony`  directory:
 
 
 
-
-
 Open: http://localhost:8085/ and start coding.
+
+To update the code: 
+
+```bash
+./deploy.sh
+```
+
