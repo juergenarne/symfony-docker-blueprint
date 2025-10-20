@@ -50,7 +50,7 @@ git pull origin "$BRANCH"
 if ! docker ps --format '{{.Names}}' | grep -q "^${WEB_CONTAINER}$"; then
     echo -e "${YELLOW}⚠️ Web container '${WEB_CONTAINER}' is not running.${RESET}"
     echo -e "${YELLOW}→ Starting container...${RESET}"
-    docker compose up -d web
+    docker compose up -d "${WEB_CONTAINER}" || docker start "${WEB_CONTAINER}"
 fi
 
 # 5️⃣ Run commands inside container
@@ -63,7 +63,7 @@ bin/console asset-map:compile
 bin/console cache:clear --no-warmup
 bin/console cache:warmup
 bin/console doctrine:migrations:migrate --no-interaction
-docker compose restart web
+docker restart ${WEB_CONTAINER}
 EOF
 else
     echo -e "${GREEN}→ Running Symfony maintenance commands inside '${WEB_CONTAINER}'...${RESET}"
@@ -77,7 +77,7 @@ else
         bin/console doctrine:migrations:migrate --no-interaction
     "
 
-    echo -e "${GREEN}→ Restarting web container...${RESET}"
-    docker compose restart web
+    echo -e "${GREEN}→ Restarting web container '${WEB_CONTAINER}'...${RESET}"
+    docker restart "${WEB_CONTAINER}"
     echo -e "${GREEN}✅ Deployment complete!${RESET}"
 fi
