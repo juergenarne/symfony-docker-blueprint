@@ -68,14 +68,16 @@ EOF
 else
     echo -e "${GREEN}→ Running Symfony maintenance commands inside '${WEB_CONTAINER}'...${RESET}"
     docker exec -i "${WEB_CONTAINER}" bash -c "
-        cd /var/www/html &&
-        composer install --no-dev --optimize-autoloader --no-interaction &&
-        rm -rf public/assets || true &&
-        bin/console asset-map:compile &&
-        bin/console cache:clear --no-warmup &&
-        bin/console cache:warmup &&
-        bin/console doctrine:migrations:migrate --no-interaction
-    "
+    cd /var/www/html &&
+    composer install --no-dev --optimize-autoloader --no-interaction &&
+    chown -R www-data:www-data public var &&
+    chmod -R 0775 public var &&
+    rm -rf public/assets || true &&
+    bin/console asset-map:compile &&
+    bin/console cache:clear --no-warmup &&
+    bin/console cache:warmup &&
+    bin/console doctrine:migrations:migrate --no-interaction
+"
 
     echo -e "${GREEN}→ Restarting web container '${WEB_CONTAINER}'...${RESET}"
     docker restart "${WEB_CONTAINER}"
