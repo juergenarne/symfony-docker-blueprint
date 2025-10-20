@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ${APP_NAME}-apache
+    networks:
+      - symfony-network
     restart: unless-stopped
     ports:
       - "${APACHE_PORT}:80"
@@ -18,12 +20,12 @@ services:
       - ./docker/php/vhost.conf:/etc/apache2/sites-available/000-default.conf
     depends_on:
       - db
-    networks:
-      - docker-network
 
   db:
     image: mariadb:${MARIADB_VERSION}
     container_name: ${APP_NAME}-maria
+    networks:
+      - symfony-network
     restart: unless-stopped
     ports:
       - "${MYSQL_PORT}:3306"
@@ -38,5 +40,6 @@ services:
       - ${MARIADB_LOCAL_DIR}${MARIADB_ETC_DIR}:/etc/mysql
 
 networks:
-  docker-network:
+  symfony-network:
+    name: symfony-network
     driver: bridge
