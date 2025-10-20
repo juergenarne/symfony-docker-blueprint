@@ -1,3 +1,9 @@
+
+networks:
+  symfony-network:
+    name: symfony-network
+    driver: bridge
+
 services:
   web:
     user: www-data
@@ -38,8 +44,3 @@ services:
       - ${MARIADB_LOCAL_DIR}${MARIADB_DATA_DIR}:/var/lib/mysql
       - ${MARIADB_LOCAL_DIR}${MARIADB_CONF_DIR}:/etc/mysql/conf.d
       - ${MARIADB_LOCAL_DIR}${MARIADB_ETC_DIR}:/etc/mysql
-
-networks:
-  symfony-network:
-    name: symfony-network
-    driver: bridge
