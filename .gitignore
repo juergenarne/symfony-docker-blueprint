@@ -1,2 +1,2 @@
 docker/mariadb/data/*
-symfony/*
+symfony/
