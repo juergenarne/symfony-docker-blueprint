@@ -10,13 +10,24 @@ BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SYMFONY_DIR="${BASE_DIR}/symfony"
 ENV_FILE="${BASE_DIR}/.env"
 
-# === Load .env file and extract APP_NAME ===
+# === Load .env file and extract variables ===
 if [ ! -f "$ENV_FILE" ]; then
     echo -e "${RED}❌ .env file not found!${RESET}"
     exit 1
 fi
 APP_NAME=$(grep -E '^APP_NAME=' "$ENV_FILE" | cut -d '=' -f2 | tr -d '"')
+APP_ENV=$(grep -E '^APP_ENV=' "$ENV_FILE" | cut -d '=' -f2 | tr -d '"')
+DEPLOY_BRANCH=$(grep -E '^DEPLOY_BRANCH=' "$ENV_FILE" | cut -d '=' -f2 | tr -d '"')
 WEB_CONTAINER="${APP_NAME}-apache"
+
+# === Determine Composer install options based on APP_ENV ===
+if [ "$APP_ENV" = "prod" ] || [ "$APP_ENV" = "production" ]; then
+    COMPOSER_CMD="composer install --no-dev --optimize-autoloader --no-interaction"
+    echo -e "${GREEN}✅ Production mode detected — installing without dev dependencies.${RESET}"
+else
+    COMPOSER_CMD="composer install --no-interaction"
+    echo -e "${YELLOW}⚙️ Development mode detected — installing with dev dependencies.${RESET}"
+fi
 
 # === Check for dry-run mode ===
 if [[ "$1" == "--dry-run" ]]; then
@@ -37,8 +48,8 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 # 2️⃣ Ask for branch
-read -rp "🔀 Enter branch to deploy [master]: " BRANCH
-BRANCH=${BRANCH:-master}
+read -rp "🔀 Enter branch to deploy [${DEPLOY_BRANCH}]: " BRANCH
+BRANCH=${BRANCH:-${DEPLOY_BRANCH}}
 
 # 3️⃣ Pull latest code
 echo -e "${GREEN}→ Pulling latest changes from branch '${BRANCH}'...${RESET}"
@@ -57,7 +68,7 @@ fi
 if [ "$DRY_RUN" = true ]; then
     echo -e "${YELLOW}Would run inside container '${WEB_CONTAINER}':${RESET}"
     cat <<EOF
-composer install --no-dev --optimize-autoloader --no-interaction
+$COMPOSER_CMD
 rm -rf public/assets
 bin/console asset-map:compile
 bin/console cache:clear --no-warmup
@@ -69,7 +80,7 @@ else
     echo -e "${GREEN}→ Running Symfony maintenance commands inside '${WEB_CONTAINER}'...${RESET}"
     docker exec -i "${WEB_CONTAINER}" bash -c "
     cd /var/www/html &&
-    composer install --no-dev --optimize-autoloader --no-interaction &&
+    $COMPOSER_CMD &&
     chown -R www-data:www-data public var &&
     chmod -R 0775 public var &&
     rm -rf public/assets || true &&

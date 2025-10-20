@@ -29,19 +29,16 @@ Optionally you can use the included start script:
 ./start.sh
 ```
 
-To clone your repo into the  `symfony`  directory: 
+To clone your repo into the  `symfony`  directory:
 
 ```bash
 ./install.sh
 ```
 
+Open: <http://localhost:8085/> and start coding.
 
-
-Open: http://localhost:8085/ and start coding.
-
-To update the code: 
+To update the code:
 
 ```bash
 ./deploy.sh
 ```
-
