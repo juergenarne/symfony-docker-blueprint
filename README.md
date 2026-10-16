@@ -1,5 +1,13 @@
 # Docker image blueprint for Symfony development
 
+To simply update the running Symfony application run 
+
+```bash
+./deploy.sh main/prod
+```
+
+in the main directory.
+
 Download:
 
 ```bash
