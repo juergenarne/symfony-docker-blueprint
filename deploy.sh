@@ -1,96 +1,383 @@
 #!/usr/bin/env bash
-set -e
 
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-RESET="\033[0m"
+set -Eeuo pipefail
 
-BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SYMFONY_DIR="${BASE_DIR}/symfony"
-ENV_FILE="${BASE_DIR}/.env"
+# ============================================
+# CONFIGURATION
+# ============================================
 
-# === Load .env file and extract variables ===
-if [ ! -f "$ENV_FILE" ]; then
-    echo -e "${RED}❌ .env file not found!${RESET}"
-    exit 1
-fi
-APP_NAME=$(grep -E '^APP_NAME=' "$ENV_FILE" | cut -d '=' -f2 | tr -d '"')
-APP_ENV=$(grep -E '^APP_ENV=' "$ENV_FILE" | cut -d '=' -f2 | tr -d '"')
-DEPLOY_BRANCH=$(grep -E '^DEPLOY_BRANCH=' "$ENV_FILE" | cut -d '=' -f2 | tr -d '"')
-WEB_CONTAINER="${APP_NAME}-apache"
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SYMFONY_DIR="$BASE_DIR/symfony"
+BACKUP_DIR="$BASE_DIR/backups"
 
-# === Determine Composer install options based on APP_ENV ===
-if [ "$APP_ENV" = "prod" ] || [ "$APP_ENV" = "production" ]; then
-    COMPOSER_CMD="composer install --no-dev --optimize-autoloader --no-interaction"
-    echo -e "${GREEN}✅ Production mode detected — installing without dev dependencies.${RESET}"
-else
-    COMPOSER_CMD="composer install --no-interaction"
-    echo -e "${YELLOW}⚙️ Development mode detected — installing with dev dependencies.${RESET}"
-fi
+DEFAULT_BRANCH="main/prod"
 
-# === Check for dry-run mode ===
-if [[ "$1" == "--dry-run" ]]; then
-    DRY_RUN=true
-    echo -e "${YELLOW}🔍 Dry-run mode enabled — no commands will be executed.${RESET}"
-else
-    DRY_RUN=false
-fi
+WEB_SERVICE="web"
+DB_SERVICE="db"
 
-echo -e "${YELLOW}=== Symfony Deployment Script ===${RESET}"
+DRY_RUN=false
+BRANCH="$DEFAULT_BRANCH"
+
+# ============================================
+# COLORS
+# ============================================
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+RESET='\033[0m'
+
+info() {
+    echo -e "${BLUE}➜ $1${RESET}"
+}
+
+success() {
+    echo -e "${GREEN}✓ $1${RESET}"
+}
+
+warning() {
+    echo -e "${YELLOW}⚠ $1${RESET}"
+}
+
+error() {
+    echo -e "${RED}✗ $1${RESET}" >&2
+}
+
+# ============================================
+# ERROR HANDLING
+# ============================================
+
+on_error() {
+    local exit_code=$?
+
+    error "Deployment fehlgeschlagen!"
+    error "Zeile: $1"
+    error "Exit-Code: $exit_code"
+
+    echo
+    warning "Ein automatisches Rollback wurde NICHT ausgeführt."
+    warning "Prüfe den Zustand der Anwendung."
+
+    exit "$exit_code"
+}
+
+trap 'on_error $LINENO' ERR
+
+# ============================================
+# ARGUMENTS
+# ============================================
+
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        --help|-h)
+            echo "Usage: ./deploy.sh [branch] [--dry-run]"
+            exit 0
+            ;;
+        -*)
+            error "Unbekannte Option: $arg"
+            exit 1
+            ;;
+        *)
+            BRANCH="$arg"
+            ;;
+    esac
+done
+
+# ============================================
+# START
+# ============================================
+
+echo
+echo "============================================"
+echo "       SYMFONY PRODUCTION DEPLOYMENT"
+echo "============================================"
+echo
+echo "Branch:  $BRANCH"
+echo "Dry-run: $DRY_RUN"
+echo
+
+cd "$BASE_DIR"
+
+# ============================================
+# 1. PREREQUISITES
+# ============================================
+
+info "Prüfe Voraussetzungen..."
+
+command -v git >/dev/null
+command -v docker >/dev/null
+
+docker compose version >/dev/null
+
+test -d "$SYMFONY_DIR/.git"
+test -f "$SYMFONY_DIR/composer.json"
+test -f "$BASE_DIR/docker-compose.yml"
+
+success "Voraussetzungen erfüllt"
+
+# ============================================
+# 2. GIT STATUS
+# ============================================
+
+info "Prüfe Git-Repository..."
+
 cd "$SYMFONY_DIR"
 
-# 1️⃣ Check for local changes
-if [ -n "$(git status --porcelain)" ]; then
-    echo -e "${RED}⚠️  There are uncommitted changes in ./symfony!${RESET}"
-    echo "Please commit, stash or reset before deploying."
+if [[ -n "$(git status --porcelain)" ]]; then
+    error "Lokale Änderungen im Symfony-Repository!"
+    echo
+    git status --short
+    echo
+    error "Bitte Änderungen zuerst sichern."
     exit 1
 fi
 
-# 2️⃣ Ask for branch
-read -rp "🔀 Enter branch to deploy [${DEPLOY_BRANCH}]: " BRANCH
-BRANCH=${BRANCH:-${DEPLOY_BRANCH}}
+success "Git-Working-Tree sauber"
 
-# 3️⃣ Pull latest code
-echo -e "${GREEN}→ Pulling latest changes from branch '${BRANCH}'...${RESET}"
+# ============================================
+# 3. DRY RUN
+# ============================================
+
+if [[ "$DRY_RUN" == true ]]; then
+
+    echo
+    warning "DRY-RUN: Es werden keine Änderungen vorgenommen."
+    echo
+
+    echo "Folgende Schritte würden ausgeführt:"
+    echo
+    echo "1. Git-Branch $BRANCH aktualisieren"
+    echo "2. MariaDB-Backup erstellen"
+    echo "3. Composer-Abhängigkeiten installieren"
+    echo "4. Importmap-Abhängigkeiten installieren"
+    echo "5. Symfony Assets kompilieren"
+    echo "6. Doctrine-Migrationen ausführen"
+    echo "7. Symfony Cache aktualisieren"
+    echo "8. Web-Container neu starten"
+    echo "9. Anwendung überprüfen"
+
+    echo
+    success "Dry-run abgeschlossen"
+    exit 0
+fi
+
+# ============================================
+# 4. CONTAINER CHECK
+# ============================================
+
+cd "$BASE_DIR"
+
+info "Prüfe Docker-Container..."
+
+WEB_RUNNING="$(docker compose ps --status running -q "$WEB_SERVICE")"
+DB_RUNNING="$(docker compose ps --status running -q "$DB_SERVICE")"
+
+if [[ -z "$WEB_RUNNING" ]]; then
+    error "Web-Container läuft nicht!"
+    exit 1
+fi
+
+if [[ -z "$DB_RUNNING" ]]; then
+    error "Datenbank-Container läuft nicht!"
+    exit 1
+fi
+
+success "Web und Datenbank laufen"
+
+# ============================================
+# 5. FETCH GIT
+# ============================================
+
+info "Hole neuesten Git-Stand..."
+
+cd "$SYMFONY_DIR"
+
 git fetch origin "$BRANCH"
-git checkout "$BRANCH"
-git pull origin "$BRANCH"
 
-# 4️⃣ Ensure container is running
-if ! docker ps --format '{{.Names}}' | grep -q "^${WEB_CONTAINER}$"; then
-    echo -e "${YELLOW}⚠️ Web container '${WEB_CONTAINER}' is not running.${RESET}"
-    echo -e "${YELLOW}→ Starting container...${RESET}"
-    docker compose up -d "${WEB_CONTAINER}" || docker start "${WEB_CONTAINER}"
-fi
+TARGET_COMMIT="$(git rev-parse FETCH_HEAD)"
+CURRENT_COMMIT="$(git rev-parse HEAD)"
 
-# 5️⃣ Run commands inside container
-if [ "$DRY_RUN" = true ]; then
-    echo -e "${YELLOW}Would run inside container '${WEB_CONTAINER}':${RESET}"
-    cat <<EOF
-$COMPOSER_CMD
-rm -rf public/assets
-bin/console asset-map:compile
-bin/console cache:clear --no-warmup
-bin/console cache:warmup
-bin/console doctrine:migrations:migrate --no-interaction
-docker restart ${WEB_CONTAINER}
-EOF
+echo "Aktuell: $CURRENT_COMMIT"
+echo "Ziel:    $TARGET_COMMIT"
+
+if [[ "$CURRENT_COMMIT" == "$TARGET_COMMIT" ]]; then
+    success "Code bereits aktuell"
 else
-    echo -e "${GREEN}→ Running Symfony maintenance commands inside '${WEB_CONTAINER}'...${RESET}"
-    docker exec -i "${WEB_CONTAINER}" bash -c "
-    cd /var/www/html &&
-    $COMPOSER_CMD &&
-    chown -R www-data:www-data public var &&
-    chmod -R 0775 public var &&
-    rm -rf public/assets || true &&
-    bin/console asset-map:compile &&
-    bin/console cache:clear --no-warmup &&
-    bin/console cache:warmup &&
-    bin/console doctrine:migrations:migrate --no-interaction
-"
-
-    echo -e "${GREEN}→ Restarting web container '${WEB_CONTAINER}'...${RESET}"
-    docker restart "${WEB_CONTAINER}"
-    echo -e "${GREEN}✅ Deployment complete!${RESET}"
+    git checkout --detach "$TARGET_COMMIT"
+    success "Code aktualisiert"
 fi
+
+# ============================================
+# 6. DATABASE BACKUP
+# ============================================
+
+cd "$BASE_DIR"
+
+info "Erstelle MariaDB-Backup..."
+
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+BACKUP_FILE="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql"
+
+# Zugangsdaten werden aus der Container-Umgebung gelesen.
+# Sie werden nicht im Skript gespeichert.
+
+docker compose exec -T "$DB_SERVICE" sh -c '
+    exec mariadb-dump \
+        -h 127.0.0.1 \
+        -u"$MYSQL_USER" \
+        -p"$MYSQL_PASSWORD" \
+        --single-transaction \
+        --quick \
+        --routines \
+        --triggers \
+        --events \
+        "$MYSQL_DATABASE"
+' > "$BACKUP_FILE"
+
+if [[ ! -s "$BACKUP_FILE" ]]; then
+    error "Datenbank-Backup ist leer!"
+    exit 1
+fi
+
+chmod 600 "$BACKUP_FILE"
+
+success "Backup erstellt: $BACKUP_FILE"
+
+# ============================================
+# 7. COMPOSER
+# ============================================
+
+info "Installiere Composer-Abhängigkeiten..."
+
+docker compose exec -T \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    "$WEB_SERVICE" \
+    composer install \
+        --no-dev \
+        --prefer-dist \
+        --optimize-autoloader \
+        --no-interaction \
+        --no-progress
+
+success "Composer abgeschlossen"
+
+# ============================================
+# 8. IMPORTMAP
+# ============================================
+
+info "Installiere Importmap-Abhängigkeiten..."
+
+docker compose exec -T \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    "$WEB_SERVICE" \
+    php bin/console importmap:install --env=prod
+
+success "Importmap aktualisiert"
+
+# ============================================
+# 9. ASSET MAPPER
+# ============================================
+
+info "Kompiliere Frontend-Assets..."
+
+docker compose exec -T \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    "$WEB_SERVICE" \
+    php bin/console asset-map:compile --env=prod
+
+success "Frontend-Assets kompiliert"
+
+# ============================================
+# 10. DATABASE MIGRATIONS
+# ============================================
+
+info "Führe Doctrine-Migrationen aus..."
+
+docker compose exec -T \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    "$WEB_SERVICE" \
+    php bin/console doctrine:migrations:migrate \
+        --no-interaction \
+        --env=prod
+
+success "Migrationen abgeschlossen"
+
+# ============================================
+# 11. SYMFONY CACHE
+# ============================================
+
+info "Aktualisiere Symfony Cache..."
+
+docker compose exec -T \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    "$WEB_SERVICE" \
+    php bin/console cache:clear --env=prod
+
+docker compose exec -T \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    "$WEB_SERVICE" \
+    php bin/console cache:warmup --env=prod
+
+success "Cache aktualisiert"
+
+# ============================================
+# 12. RESTART WEB CONTAINER
+# ============================================
+
+info "Starte Web-Container neu..."
+
+docker compose restart "$WEB_SERVICE"
+
+success "Web-Container neu gestartet"
+
+# ============================================
+# 13. HEALTH CHECK
+# ============================================
+
+info "Prüfe Anwendung..."
+
+sleep 3
+
+docker compose ps
+
+HTTP_CODE="$(curl -k -L -s -o /dev/null -w '%{http_code}' \
+    --max-time 20 \
+    https://buerofueralles.berlin || true)"
+
+echo
+echo "HTTP Status: $HTTP_CODE"
+
+if [[ "$HTTP_CODE" =~ ^(200|301|302)$ ]]; then
+    success "Website erreichbar"
+else
+    warning "Website liefert HTTP $HTTP_CODE"
+    warning "Bitte Anwendung prüfen!"
+    exit 1
+fi
+
+# ============================================
+# FINISHED
+# ============================================
+
+echo
+echo "============================================"
+echo -e "${GREEN}       DEPLOYMENT ERFOLGREICH${RESET}"
+echo "============================================"
+echo
+echo "Branch:  $BRANCH"
+echo "Commit:  $TARGET_COMMIT"
+echo "Backup:  $BACKUP_FILE"
+echo
