@@ -14,6 +14,7 @@ DEFAULT_BRANCH="main/prod"
 
 WEB_SERVICE="web"
 DB_SERVICE="db"
+WORKER_SERVICE="worker"
 
 DRY_RUN=false
 BRANCH="$DEFAULT_BRANCH"
@@ -117,6 +118,17 @@ test -d "$SYMFONY_DIR/.git"
 test -f "$SYMFONY_DIR/composer.json"
 test -f "$BASE_DIR/docker-compose.yml"
 
+# .env is not in git - without the real values the containers would be recreated with wrong DB credentials
+if [[ ! -f "$BASE_DIR/.env" ]]; then
+    error ".env fehlt! Vorlage: cp .env.dist .env - und die echten Werte eintragen."
+    exit 1
+fi
+
+if grep -qE '^MYSQL_(ROOT_)?PASSWORD=(CHANGE_ME|password)?$' "$BASE_DIR/.env"; then
+    error ".env enthält noch Platzhalter-Passwörter (CHANGE_ME/password)!"
+    exit 1
+fi
+
 success "Voraussetzungen erfüllt"
 
 # ============================================
@@ -157,7 +169,7 @@ if [[ "$DRY_RUN" == true ]]; then
     echo "5. Symfony Assets kompilieren"
     echo "6. Doctrine-Migrationen ausführen"
     echo "7. Symfony Cache aktualisieren"
-    echo "8. Web-Container neu starten"
+    echo "8. Web-Container und Mail-Worker neu starten"
     echo "9. Anwendung überprüfen"
 
     echo
@@ -334,7 +346,7 @@ docker compose exec -T \
 success "Cache aktualisiert"
 
 # ============================================
-# 12. RESTART WEB CONTAINER
+# 12. RESTART WEB CONTAINER + MAIL WORKER
 # ============================================
 
 info "Starte Web-Container neu..."
@@ -342,6 +354,14 @@ info "Starte Web-Container neu..."
 docker compose restart "$WEB_SERVICE"
 
 success "Web-Container neu gestartet"
+
+info "Starte Mail-Worker (neu)..."
+
+# Legt den Worker beim ersten Deploy an, danach Neustart, damit er den neuen Code lädt.
+docker compose up -d "$WORKER_SERVICE"
+docker compose restart "$WORKER_SERVICE"
+
+success "Mail-Worker gestartet"
 
 # ============================================
 # 13. HEALTH CHECK
@@ -352,6 +372,14 @@ info "Prüfe Anwendung..."
 sleep 3
 
 docker compose ps
+
+if [[ -z "$(docker compose ps --status running -q "$WORKER_SERVICE")" ]]; then
+    warning "Mail-Worker läuft nicht - Mails werden nicht verschickt!"
+    warning "Log: docker compose logs --tail=50 $WORKER_SERVICE"
+    exit 1
+fi
+
+success "Mail-Worker läuft"
 
 HTTP_CODE="$(curl -k -L -s -o /dev/null -w '%{http_code}' \
     --max-time 20 \

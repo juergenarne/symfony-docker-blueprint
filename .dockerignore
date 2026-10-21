@@ -1,0 +1,7 @@
+# kept out of the image: secrets, DB dumps and data, and the app code (mounted as volume at runtime)
+.env
+.git/
+backups/
+docker/mariadb/
+mariadb/
+symfony/

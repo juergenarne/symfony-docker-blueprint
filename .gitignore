@@ -1,3 +1,4 @@
 docker/mariadb/data/*
 symfony/
 backups/
+.env

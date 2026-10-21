@@ -1,4 +1,4 @@
-FROM php:8.4-apache
+FROM php:8.5-apache
 
 # Systempakete
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,10 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip git mariadb-client \
  && rm -rf /var/lib/apt/lists/*
 
-# PHP-Extensions: GD, intl, zip, exif, mbstring, PDO MySQL, Opcache, Imagick, Redis, APCu
+# PHP-Extensions: GD, intl, zip, exif, mbstring, PDO MySQL, Imagick, Redis, APCu
+# (OPcache is built into PHP 8.5 - no install needed)
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
  && docker-php-ext-configure intl \
- && docker-php-ext-install -j$(nproc) gd intl zip exif mbstring pdo_mysql opcache \
+ && docker-php-ext-install -j$(nproc) gd intl zip exif mbstring pdo_mysql \
  && if ! pecl list | grep -qi imagick; then pecl install imagick; fi && docker-php-ext-enable imagick \
  && if ! php -m | grep -qi redis;   then pecl install redis   && docker-php-ext-enable redis;   fi \
  && if ! php -m | grep -qi apcu;    then pecl install apcu    && docker-php-ext-enable apcu;    fi

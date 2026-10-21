@@ -16,7 +16,14 @@ git clone https://juergenarne@github.com/juergenarne/symfony-docker-blueprint.gi
 
 Tweak:
 
-Modify stuff from the .env file to meet your needs.
+Create your `.env` from the template and fill in real values (passwords!):
+
+```bash
+cp .env.dist .env
+```
+
+The `.env` is not in git. On a server with an existing database, its `MYSQL_*` values must match that database -
+MariaDB only reads them when its data directory is still empty.
 
 Run:
 
